@@ -52,7 +52,9 @@ const Profile = () => {
     // Supabase may expose provider access token on session.provider_token
     const providerToken = (session as any)?.provider_token;
     // Also ensure the identity provider is LinkedIn if available
-    const isLinkedIn = (session as any)?.user?.identities?.some((id: any) => id.provider === 'linkedin');
+    const isLinkedIn = (session as any)?.user?.identities?.some(
+      (id: any) => id.provider === 'linkedin' || id.provider === 'linkedin_oidc'
+    );
     if (!providerToken || !isLinkedIn) return;
 
     const fetchLinkedIn = async () => {
