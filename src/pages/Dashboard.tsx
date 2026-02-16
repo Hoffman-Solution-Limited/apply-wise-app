@@ -10,9 +10,37 @@ import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { Job, JobStatus, STATUS_CONFIG } from "@/lib/jobs";
 import { Plus, Search, LayoutList, Columns3, LogOut, Briefcase } from "lucide-react";
+import { Link } from "react-router-dom";
+import { Avatar, AvatarImage, AvatarFallback } from "@/components/ui/avatar";
+import { useEffect } from "react";
+import { supabase } from "@/integrations/supabase/client";
 
 const Dashboard = () => {
   const { user, signOut } = useAuth();
+  const [avatarUrl, setAvatarUrl] = useState<string | null>(null);
+  const [initials, setInitials] = useState<string>("");
+
+  useEffect(() => {
+    if (!user) return;
+    const loadProfile = async () => {
+      try {
+        const { data } = await supabase.from('profiles').select('resume_url,display_name').eq('user_id', user.id).single();
+        if (data) {
+          setAvatarUrl((data as any).resume_url ?? null);
+          const name = (data as any).display_name ?? user.email ?? '';
+          const parts = name.split(/\s+/).filter(Boolean);
+          setInitials(parts.length === 0 ? '' : parts.length === 1 ? parts[0].slice(0,2).toUpperCase() : (parts[0][0]+parts[parts.length-1][0]).toUpperCase());
+        } else {
+          const name = user.email ?? '';
+          const parts = name.split(/@|\.|\s+/).filter(Boolean);
+          setInitials(parts.length ? parts[0].slice(0,2).toUpperCase() : '');
+        }
+      } catch (err) {
+        console.warn('Failed to load profile avatar', err);
+      }
+    };
+    loadProfile();
+  }, [user]);
   const { jobs, isLoading, upsertJob, deleteJob } = useJobs();
   const [view, setView] = useState<"table" | "kanban">("table");
   const [search, setSearch] = useState("");
@@ -61,6 +89,11 @@ const Dashboard = () => {
           </div>
           <div className="flex items-center gap-3">
             <span className="text-xs text-muted-foreground hidden sm:block">{user?.email}</span>
+            <Link to="/profile" aria-label="Profile">
+              <Avatar>
+                {avatarUrl ? <AvatarImage src={avatarUrl} alt="avatar" /> : <AvatarFallback>{initials}</AvatarFallback>}
+              </Avatar>
+            </Link>
             <Button variant="ghost" size="icon" className="h-8 w-8" onClick={signOut}>
               <LogOut className="w-4 h-4" />
             </Button>
