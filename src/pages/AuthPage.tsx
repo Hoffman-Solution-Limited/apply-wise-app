@@ -5,6 +5,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { useToast } from "@/hooks/use-toast";
 import { Briefcase, Mail, Lock, User, Loader2 } from "lucide-react";
+import { useNavigate, Link } from "react-router-dom";
 
 const AuthPage = () => {
   const [isLogin, setIsLogin] = useState(true);
@@ -13,6 +14,8 @@ const AuthPage = () => {
   const [displayName, setDisplayName] = useState("");
   const [loading, setLoading] = useState(false);
   const { toast } = useToast();
+  const [user, setUser] = useState<any>(null);
+  const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -22,6 +25,7 @@ const AuthPage = () => {
       if (isLogin) {
         const { error } = await supabase.auth.signInWithPassword({ email, password });
         if (error) throw error;
+        navigate('/');
       } else {
         const { error } = await supabase.auth.signUp({
           email,
@@ -43,6 +47,26 @@ const AuthPage = () => {
         description: error.message,
         variant: "destructive",
       });
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleResumeUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    // Handle file upload (Profile page will implement full upload)
+    if (!file) return;
+    toast({ title: 'Selected file', description: file.name });
+  };
+
+  const signInWithProvider = async (provider: 'google' | 'linkedin') => {
+    setLoading(true);
+    try {
+      const { error } = await supabase.auth.signInWithOAuth({ provider, options: { redirectTo: window.location.origin } });
+      if (error) throw error;
+      // Supabase will redirect for OAuth flows
+    } catch (err: any) {
+      toast({ title: 'OAuth Error', description: err.message, variant: 'destructive' });
     } finally {
       setLoading(false);
     }
@@ -124,6 +148,22 @@ const AuthPage = () => {
             >
               {isLogin ? "Don't have an account? Sign up" : "Already have an account? Sign in"}
             </button>
+          </div>
+
+          <div className="mt-6">
+            <h2>Create Profile</h2>
+            <div className="flex gap-2 flex-col">
+              <Button type="button" onClick={() => signInWithProvider('google')} disabled={loading}>Sign in with Google</Button>
+              <Button type="button" onClick={() => signInWithProvider('linkedin')} disabled={loading}>Sign in with LinkedIn</Button>
+              <div>
+                <Label>Or upload resume now</Label>
+                <input type="file" onChange={handleResumeUpload} />
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">You can also edit your profile later:</p>
+                <Link to="/profile" className="text-primary hover:underline">Go to Profile</Link>
+              </div>
+            </div>
           </div>
         </div>
       </div>
