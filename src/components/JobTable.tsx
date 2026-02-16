@@ -1,18 +1,19 @@
-import { Job, STATUS_CONFIG, PLATFORM_LABELS } from "@/lib/jobs";
+import { Job, PLATFORM_LABELS } from "@/lib/jobs";
 import { StatusBadge } from "@/components/StatusBadge";
 import { DeadlineIndicator } from "@/components/DeadlineIndicator";
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Button } from "@/components/ui/button";
-import { Pencil, Trash2, ExternalLink } from "lucide-react";
+import { Pencil, Trash2, Send } from "lucide-react";
 import { JobStatus } from "@/lib/jobs";
 
 type Props = {
   jobs: Job[];
   onEdit: (job: Job) => void;
+  onSubmitApplication: (job: Job) => void;
   onDelete: (id: string) => void;
 };
 
-export const JobTable = ({ jobs, onEdit, onDelete }: Props) => {
+export const JobTable = ({ jobs, onEdit, onSubmitApplication, onDelete }: Props) => {
   if (jobs.length === 0) {
     return (
       <div className="text-center py-16 text-muted-foreground">
@@ -33,21 +34,15 @@ export const JobTable = ({ jobs, onEdit, onDelete }: Props) => {
             <TableHead className="font-semibold">Status</TableHead>
             <TableHead className="font-semibold">Deadline</TableHead>
             <TableHead className="font-semibold">Tags</TableHead>
-            <TableHead className="font-semibold w-[100px]">Actions</TableHead>
+            <TableHead className="font-semibold">Docs</TableHead>
+            <TableHead className="font-semibold w-[260px]">Actions</TableHead>
           </TableRow>
         </TableHeader>
         <TableBody>
           {jobs.map((job) => (
-            <TableRow key={job.id} className="group cursor-pointer" onClick={() => onEdit(job)}>
+            <TableRow key={job.id}>
               <TableCell className="font-medium">
-                <div className="flex items-center gap-2">
-                  {job.company}
-                  {job.link && (
-                    <a href={job.link} target="_blank" rel="noopener noreferrer" onClick={(e) => e.stopPropagation()} className="text-muted-foreground hover:text-primary">
-                      <ExternalLink className="w-3.5 h-3.5" />
-                    </a>
-                  )}
-                </div>
+                {job.company}
               </TableCell>
               <TableCell className="text-muted-foreground">{job.title}</TableCell>
               <TableCell className="text-muted-foreground text-sm">{PLATFORM_LABELS[job.platform || "other"]}</TableCell>
@@ -62,12 +57,50 @@ export const JobTable = ({ jobs, onEdit, onDelete }: Props) => {
                 </div>
               </TableCell>
               <TableCell>
-                <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                  <Button variant="ghost" size="icon" className="h-7 w-7" onClick={(e) => { e.stopPropagation(); onEdit(job); }}>
-                    <Pencil className="w-3.5 h-3.5" />
+                <div className="flex items-center gap-2 text-xs">
+                  {job.submitted_cv_url ? (
+                    <a
+                      href={job.submitted_cv_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-primary hover:underline"
+                    >
+                      View CV
+                    </a>
+                  ) : (
+                    <span className="text-muted-foreground">No CV</span>
+                  )}
+                  {job.submitted_cover_letter_url && (
+                    <a
+                      href={job.submitted_cover_letter_url}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-primary hover:underline"
+                    >
+                      View CL
+                    </a>
+                  )}
+                </div>
+              </TableCell>
+              <TableCell>
+                <div className="flex items-center gap-1.5">
+                  <Button variant="ghost" size="sm" className="h-8 px-2.5" onClick={() => onEdit(job)}>
+                    <Pencil className="w-3.5 h-3.5 mr-1" />
+                    Edit
                   </Button>
-                  <Button variant="ghost" size="icon" className="h-7 w-7 text-destructive" onClick={(e) => { e.stopPropagation(); onDelete(job.id); }}>
-                    <Trash2 className="w-3.5 h-3.5" />
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    className="h-8 px-2.5 text-primary"
+                    onClick={() => onSubmitApplication(job)}
+                    disabled={job.status !== "not_submitted"}
+                  >
+                    <Send className="w-3.5 h-3.5 mr-1" />
+                    Submit application
+                  </Button>
+                  <Button variant="ghost" size="sm" className="h-8 px-2.5 text-destructive" onClick={() => onDelete(job.id)}>
+                    <Trash2 className="w-3.5 h-3.5 mr-1" />
+                    Delete
                   </Button>
                 </div>
               </TableCell>

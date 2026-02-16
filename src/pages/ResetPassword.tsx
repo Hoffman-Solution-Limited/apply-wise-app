@@ -1,7 +1,8 @@
 import { FormEvent, useEffect, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { Loader2, Lock, Briefcase } from "lucide-react";
+import { Loader2, Lock } from "lucide-react";
 import { supabase } from "@/integrations/supabase/client";
+import { BrandLogo } from "@/components/BrandLogo";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -103,10 +104,8 @@ const ResetPassword = () => {
   return (
     <div className="min-h-screen flex items-center justify-center bg-background px-4">
       <div className="w-full max-w-md animate-fade-in">
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-primary/10 mb-4">
-            <Briefcase className="w-7 h-7 text-primary" />
-          </div>
+        <div className="text-center mb-8 space-y-3">
+          <BrandLogo size="md" className="justify-center" />
           <h1 className="text-2xl font-bold tracking-tight">Reset Password</h1>
           <p className="text-muted-foreground mt-1 text-sm">
             Enter a new password for your account.

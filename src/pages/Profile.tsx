@@ -1,12 +1,52 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Button } from "@/components/ui/button";
 import { useToast } from "@/hooks/use-toast";
-import { Card } from "@/components/ui/card";
-import { Avatar } from "@/components/ui/avatar";
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
+import { Avatar, AvatarFallback } from "@/components/ui/avatar";
+import { Separator } from "@/components/ui/separator";
+import { Loader2, Upload, FileText, Plus, Trash2, ShieldCheck, ArrowLeft } from "lucide-react";
+import { Link } from "react-router-dom";
+import { RESUMES_BUCKET, getBucketNotFoundMessage, isBucketNotFoundError } from "@/lib/storage";
+
+type ExperienceItem = {
+  company: string;
+  role: string;
+  start: string;
+  end: string;
+};
+
+type EducationItem = {
+  school: string;
+  degree: string;
+  start: string;
+  end: string;
+};
+
+const EMPTY_EXPERIENCE: ExperienceItem = { company: "", role: "", start: "", end: "" };
+const EMPTY_EDUCATION: EducationItem = { school: "", degree: "", start: "", end: "" };
+
+const getInitials = (value: string) => {
+  const parts = value.split(/\s+|@|\./).filter(Boolean);
+  if (parts.length === 0) return "U";
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
+};
+
+const getFileNameFromPathOrUrl = (value: string) => {
+  if (!value) return "";
+  try {
+    const path = value.startsWith("http") ? new URL(value).pathname : value;
+    const last = path.split("/").filter(Boolean).pop() || "";
+    return decodeURIComponent(last);
+  } catch {
+    const last = value.split("/").filter(Boolean).pop() || "";
+    return decodeURIComponent(last);
+  }
+};
 
 const Profile = () => {
   const { user, session } = useAuth();
@@ -14,9 +54,53 @@ const Profile = () => {
   const [displayName, setDisplayName] = useState("");
   const [email, setEmail] = useState("");
   const [resumeUrl, setResumeUrl] = useState<string | null>(null);
+  const [resumeFileName, setResumeFileName] = useState("");
   const [loading, setLoading] = useState(false);
-  const [experience, setExperience] = useState<Array<any>>([]);
-  const [education, setEducation] = useState<Array<any>>([]);
+  const [uploadingResume, setUploadingResume] = useState(false);
+  const [experience, setExperience] = useState<ExperienceItem[]>([]);
+  const [education, setEducation] = useState<EducationItem[]>([]);
+  const resumeInputRef = useRef<HTMLInputElement>(null);
+
+  const initials = useMemo(() => {
+    const source = displayName.trim() || user?.email || "User";
+    return getInitials(source);
+  }, [displayName, user?.email]);
+
+  const resolveResumeUrl = (path: string) => {
+    const { data } = supabase.storage.from(RESUMES_BUCKET).getPublicUrl(path);
+    return data.publicUrl;
+  };
+
+  const getLatestResumePath = async (uid: string): Promise<string | null> => {
+    const folders = [uid, `resumes/${uid}`];
+    let latest: { path: string; timestamp: string } | null = null;
+
+    for (const folder of folders) {
+      const { data, error } = await supabase.storage.from(RESUMES_BUCKET).list(folder, {
+        limit: 100,
+        sortBy: { column: "updated_at", order: "desc" },
+      });
+
+      if (error || !data) {
+        if (error && isBucketNotFoundError(error)) {
+          console.warn(getBucketNotFoundMessage(RESUMES_BUCKET));
+          return null;
+        }
+        continue;
+      }
+
+      for (const item of data) {
+        if (!item.name) continue;
+        const path = `${folder}/${item.name}`;
+        const timestamp = item.updated_at || item.created_at || "";
+        if (!latest || timestamp > latest.timestamp) {
+          latest = { path, timestamp };
+        }
+      }
+    }
+
+    return latest?.path ?? null;
+  };
 
   useEffect(() => {
     if (!user) return;
@@ -28,13 +112,39 @@ const Profile = () => {
         if (error && (error as any).code !== 'PGRST116') {
           throw error;
         }
+        const profile = data as
+          | {
+              display_name?: string | null;
+              resume_url?: string | null;
+              experience?: ExperienceItem[] | null;
+              education?: EducationItem[] | null;
+              email?: string | null;
+            }
+          | null;
+
+        setEmail(user.email ?? profile?.email ?? "");
+
         if (data) {
-          setDisplayName((data as any).display_name ?? '');
-          setResumeUrl((data as any).resume_url ?? null);
-          setExperience((data as any).experience ?? []);
-          setEducation((data as any).education ?? []);
-          // Prefill email from auth user if available
-          setEmail((user as any)?.email ?? (data as any).email ?? '');
+          setDisplayName(profile?.display_name ?? "");
+          setExperience(profile?.experience ?? []);
+          setEducation(profile?.education ?? []);
+          if (profile?.resume_url) {
+            setResumeUrl(profile.resume_url);
+            setResumeFileName(getFileNameFromPathOrUrl(profile.resume_url));
+          }
+        }
+
+        const hasProfileResume = Boolean(profile?.resume_url);
+        if (!hasProfileResume) {
+          const latestResumePath = await getLatestResumePath(user.id);
+          if (latestResumePath) {
+            const autoResumeUrl = resolveResumeUrl(latestResumePath);
+            setResumeUrl(autoResumeUrl);
+            setResumeFileName(getFileNameFromPathOrUrl(latestResumePath));
+            await supabase
+              .from("profiles")
+              .upsert({ user_id: user.id, resume_url: autoResumeUrl } as any);
+          }
         }
       } catch (err: any) {
         toast({ title: 'Error', description: err.message, variant: 'destructive' });
@@ -99,44 +209,82 @@ const Profile = () => {
 
   const uploadResume = async (file: File) => {
     if (!user) return;
-    setLoading(true);
+    const lowerName = file.name.toLowerCase();
+    const allowedMimeTypes = [
+      "application/pdf",
+      "application/msword",
+      "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ];
+    const allowedExtensions = [".pdf", ".doc", ".docx"];
+
+    const hasAllowedMime = allowedMimeTypes.includes(file.type);
+    const hasAllowedExtension = allowedExtensions.some((ext) => lowerName.endsWith(ext));
+    if (!hasAllowedMime && !hasAllowedExtension) {
+      toast({
+        title: "Unsupported file",
+        description: "Upload a PDF, DOC, or DOCX file.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    const maxSizeMb = 10;
+    if (file.size > maxSizeMb * 1024 * 1024) {
+      toast({
+        title: "File too large",
+        description: `Please upload a file smaller than ${maxSizeMb}MB.`,
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setUploadingResume(true);
     try {
-      const path = `resumes/${user.id}/${Date.now()}_${file.name}`;
-      const { error: uploadError } = await supabase.storage.from('resumes').upload(path, file, { upsert: true });
+      const safeName = file.name.replace(/\s+/g, "_").replace(/[^a-zA-Z0-9._-]/g, "");
+      const path = `${user.id}/${Date.now()}-${safeName}`;
+      const { error: uploadError } = await supabase.storage.from(RESUMES_BUCKET).upload(path, file, {
+        upsert: true,
+        cacheControl: "3600",
+        contentType: file.type || undefined,
+      });
       if (uploadError) throw uploadError;
-      const { data } = supabase.storage.from('resumes').getPublicUrl(path);
-      const url = data.publicUrl;
+      const url = resolveResumeUrl(path);
 
       // Save profile metadata (use user_id field)
-      const { error: upsertError } = await supabase.from('profiles').upsert({ user_id: user.id, display_name: displayName, resume_url: url, experience, education } as any);
+      const { error: upsertError } = await supabase
+        .from('profiles')
+        .upsert({ user_id: user.id, display_name: displayName, resume_url: url, experience, education } as any);
       if (upsertError) throw upsertError;
       setResumeUrl(url);
+      setResumeFileName(safeName);
       toast({ title: 'Resume uploaded', description: 'Your resume has been uploaded.' });
     } catch (err: any) {
-      toast({ title: 'Upload error', description: err.message, variant: 'destructive' });
+      const description = isBucketNotFoundError(err) ? getBucketNotFoundMessage(RESUMES_BUCKET) : err.message;
+      toast({ title: 'Upload error', description, variant: 'destructive' });
     } finally {
-      setLoading(false);
+      setUploadingResume(false);
     }
   };
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
-    uploadResume(file);
+    void uploadResume(file);
+    e.target.value = "";
   };
 
-  const addExperience = () => setExperience([...experience, { company: '', role: '', start: '', end: '' }]);
+  const addExperience = () => setExperience([...experience, { ...EMPTY_EXPERIENCE }]);
   const updateExperience = (idx: number, key: string, value: string) => {
     const copy = [...experience];
-    copy[idx][key] = value;
+    copy[idx] = { ...copy[idx], [key]: value } as ExperienceItem;
     setExperience(copy);
   };
   const removeExperience = (idx: number) => setExperience(experience.filter((_, i) => i !== idx));
 
-  const addEducation = () => setEducation([...education, { school: '', degree: '', start: '', end: '' }]);
+  const addEducation = () => setEducation([...education, { ...EMPTY_EDUCATION }]);
   const updateEducation = (idx: number, key: string, value: string) => {
     const copy = [...education];
-    copy[idx][key] = value;
+    copy[idx] = { ...copy[idx], [key]: value } as EducationItem;
     setEducation(copy);
   };
   const removeEducation = (idx: number) => setEducation(education.filter((_, i) => i !== idx));
@@ -185,88 +333,295 @@ const Profile = () => {
   if (!user) return <div className="min-h-screen flex items-center justify-center">Please sign in to edit your profile.</div>;
 
   return (
-    <div className="max-w-3xl mx-auto p-6">
-      <h1 className="text-2xl font-bold mb-4">Your Profile</h1>
-      <div className="space-y-4 bg-card p-4 rounded-md">
-        <div className="grid grid-cols-1 gap-4 md:grid-cols-2">
-          <div>
-            <Label>Name</Label>
-            <Input value={displayName} onChange={(e) => setDisplayName(e.target.value)} />
-          </div>
-          <div>
-            <Label>Email</Label>
-            <Input value={email} onChange={(e) => setEmail(e.target.value)} />
-          </div>
-        </div>
-
-        <div>
-          <Label>Resume</Label>
-          {resumeUrl ? (
-            <div className="flex items-center gap-4">
-              <a href={resumeUrl} target="_blank" rel="noreferrer" className="text-primary hover:underline">View current resume</a>
-              <span className="text-sm text-muted-foreground">(You can upload a new file below)</span>
+    <div className="min-h-screen bg-gradient-to-b from-background via-background to-muted/30">
+      <div className="max-w-6xl mx-auto p-4 sm:p-6 lg:p-8 space-y-6">
+        <Card className="overflow-hidden border-primary/20">
+          <CardContent className="p-0">
+              <div className="bg-gradient-to-r from-primary/12 via-primary/5 to-transparent px-6 py-5 flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                <div className="flex items-center gap-4">
+                  <Avatar className="h-14 w-14 ring-2 ring-background shadow-sm">
+                    <AvatarFallback className="font-semibold">{initials}</AvatarFallback>
+                  </Avatar>
+                  <div>
+                    <Button asChild variant="ghost" size="sm" className="-ml-2 mb-2">
+                      <Link to="/">
+                        <ArrowLeft className="w-4 h-4" />
+                        Back to Dashboard
+                      </Link>
+                    </Button>
+                    <h1 className="text-2xl font-bold">Profile Settings</h1>
+                    <p className="text-sm text-muted-foreground">Manage your account, resume, and professional details.</p>
+                  </div>
+                </div>
+              <Button onClick={saveProfile} disabled={loading || uploadingResume}>
+                {(loading || uploadingResume) && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                Save Profile
+              </Button>
             </div>
-          ) : (
-            <p className="text-sm text-muted-foreground">No resume uploaded yet.</p>
-          )}
-          <input type="file" onChange={handleFileChange} />
-        </div>
+          </CardContent>
+        </Card>
 
-        <div>
-          <div className="flex items-center justify-between">
-            <Label>Experience</Label>
-            <Button size="sm" onClick={addExperience}>Add</Button>
-          </div>
-          <div className="space-y-2 mt-2">
-            {experience.map((exp, idx) => (
-              <div key={idx} className="p-2 border rounded">
-                <Input placeholder="Company" value={exp.company} onChange={(e) => updateExperience(idx, 'company', e.target.value)} />
-                <Input placeholder="Role" value={exp.role} onChange={(e) => updateExperience(idx, 'role', e.target.value)} />
-                <div className="flex gap-2 mt-2">
-                  <Input placeholder="Start" value={exp.start} onChange={(e) => updateExperience(idx, 'start', e.target.value)} />
-                  <Input placeholder="End" value={exp.end} onChange={(e) => updateExperience(idx, 'end', e.target.value)} />
+        <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
+          <div className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Basic Information</CardTitle>
+                <CardDescription>Keep your public profile and sign-in email up to date.</CardDescription>
+              </CardHeader>
+              <CardContent className="grid grid-cols-1 gap-4 md:grid-cols-2">
+                <div className="space-y-2">
+                  <Label htmlFor="profile-name">Name</Label>
+                  <Input
+                    id="profile-name"
+                    value={displayName}
+                    onChange={(e) => setDisplayName(e.target.value)}
+                    placeholder="Your full name"
+                  />
                 </div>
-                <div className="flex justify-end mt-2">
-                  <Button size="sm" variant="destructive" onClick={() => removeExperience(idx)}>Remove</Button>
+                <div className="space-y-2">
+                  <Label htmlFor="profile-email">Email</Label>
+                  <Input
+                    id="profile-email"
+                    type="email"
+                    value={email}
+                    onChange={(e) => setEmail(e.target.value)}
+                    placeholder="you@example.com"
+                  />
                 </div>
-              </div>
-            ))}
-          </div>
-        </div>
+              </CardContent>
+            </Card>
 
-        <div>
-          <div className="flex items-center justify-between">
-            <Label>Education</Label>
-            <Button size="sm" onClick={addEducation}>Add</Button>
-          </div>
-          <div className="space-y-2 mt-2">
-            {education.map((ed, idx) => (
-              <div key={idx} className="p-2 border rounded">
-                <Input placeholder="School" value={ed.school} onChange={(e) => updateEducation(idx, 'school', e.target.value)} />
-                <Input placeholder="Degree" value={ed.degree} onChange={(e) => updateEducation(idx, 'degree', e.target.value)} />
-                <div className="flex gap-2 mt-2">
-                  <Input placeholder="Start" value={ed.start} onChange={(e) => updateEducation(idx, 'start', e.target.value)} />
-                  <Input placeholder="End" value={ed.end} onChange={(e) => updateEducation(idx, 'end', e.target.value)} />
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Resume / CV</CardTitle>
+                <CardDescription>Upload your latest CV. It uploads immediately after file selection.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="rounded-lg border border-dashed border-border bg-muted/30 p-4 sm:p-5">
+                  <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between">
+                    <div className="space-y-1.5">
+                      <div className="flex items-center gap-2 text-sm font-medium">
+                        <FileText className="w-4 h-4 text-primary" />
+                        <span>{resumeUrl ? "Resume on file" : "No resume uploaded yet"}</span>
+                      </div>
+                      <p className="text-xs text-muted-foreground">
+                        {resumeFileName || "Accepted formats: PDF, DOC, DOCX (max 10MB)"}
+                      </p>
+                      {resumeUrl && (
+                        <a href={resumeUrl} target="_blank" rel="noreferrer" className="inline-block text-sm text-primary hover:underline">
+                          View current resume
+                        </a>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <input
+                        ref={resumeInputRef}
+                        type="file"
+                        accept=".pdf,.doc,.docx,application/pdf,application/msword,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+                        className="hidden"
+                        onChange={handleFileChange}
+                        disabled={uploadingResume}
+                      />
+                      <Button
+                        type="button"
+                        variant="outline"
+                        onClick={() => resumeInputRef.current?.click()}
+                        disabled={uploadingResume}
+                      >
+                        {uploadingResume ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Upload className="w-4 h-4 mr-2" />}
+                        {uploadingResume ? "Uploading..." : "Choose CV"}
+                      </Button>
+                    </div>
+                  </div>
                 </div>
-                <div className="flex justify-end mt-2">
-                  <Button size="sm" variant="destructive" onClick={() => removeEducation(idx)}>Remove</Button>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+              </CardContent>
+            </Card>
 
-        <div className="flex justify-end">
-          <Button onClick={saveProfile} disabled={loading}>Save Profile</Button>
-        </div>
-        <div className="mt-6 border-t pt-4">
-          <h3 className="font-semibold">Change Password</h3>
-          <div className="grid grid-cols-1 gap-2 md:grid-cols-2 mt-2">
-            <Input type="password" placeholder="New password" value={newPassword} onChange={(e) => setNewPassword(e.target.value)} />
-            <Input type="password" placeholder="Confirm password" value={confirmPassword} onChange={(e) => setConfirmPassword(e.target.value)} />
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between">
+                <div>
+                  <CardTitle className="text-lg">Experience</CardTitle>
+                  <CardDescription>Add your recent roles to enrich your profile.</CardDescription>
+                </div>
+                <Button type="button" size="sm" onClick={addExperience}>
+                  <Plus className="w-4 h-4 mr-1.5" />
+                  Add
+                </Button>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {experience.length === 0 && (
+                  <p className="text-sm text-muted-foreground">No experience entries yet.</p>
+                )}
+                {experience.map((exp, idx) => (
+                  <div key={`${idx}-${exp.company}-${exp.role}`} className="rounded-lg border bg-muted/20 p-3 space-y-3">
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                      <Input
+                        placeholder="Company"
+                        value={exp.company}
+                        onChange={(e) => updateExperience(idx, "company", e.target.value)}
+                      />
+                      <Input
+                        placeholder="Role"
+                        value={exp.role}
+                        onChange={(e) => updateExperience(idx, "role", e.target.value)}
+                      />
+                    </div>
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label htmlFor={`experience-start-${idx}`}>Start date</Label>
+                        <Input
+                          id={`experience-start-${idx}`}
+                          type="date"
+                          value={exp.start}
+                          onChange={(e) => updateExperience(idx, "start", e.target.value)}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor={`experience-end-${idx}`}>End date</Label>
+                        <Input
+                          id={`experience-end-${idx}`}
+                          type="date"
+                          value={exp.end}
+                          onChange={(e) => updateExperience(idx, "end", e.target.value)}
+                        />
+                      </div>
+                    </div>
+                    <div className="flex justify-end">
+                      <Button type="button" size="sm" variant="ghost" className="text-destructive" onClick={() => removeExperience(idx)}>
+                        <Trash2 className="w-4 h-4 mr-1.5" />
+                        Remove
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between">
+                <div>
+                  <CardTitle className="text-lg">Education</CardTitle>
+                  <CardDescription>Add schools and degrees to complete your profile.</CardDescription>
+                </div>
+                <Button type="button" size="sm" onClick={addEducation}>
+                  <Plus className="w-4 h-4 mr-1.5" />
+                  Add
+                </Button>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                {education.length === 0 && (
+                  <p className="text-sm text-muted-foreground">No education entries yet.</p>
+                )}
+                {education.map((ed, idx) => (
+                  <div key={`${idx}-${ed.school}-${ed.degree}`} className="rounded-lg border bg-muted/20 p-3 space-y-3">
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                      <Input
+                        placeholder="School"
+                        value={ed.school}
+                        onChange={(e) => updateEducation(idx, "school", e.target.value)}
+                      />
+                      <Input
+                        placeholder="Degree"
+                        value={ed.degree}
+                        onChange={(e) => updateEducation(idx, "degree", e.target.value)}
+                      />
+                    </div>
+                    <div className="grid grid-cols-1 gap-3 md:grid-cols-2">
+                      <div className="space-y-2">
+                        <Label htmlFor={`education-start-${idx}`}>Start date</Label>
+                        <Input
+                          id={`education-start-${idx}`}
+                          type="date"
+                          value={ed.start}
+                          onChange={(e) => updateEducation(idx, "start", e.target.value)}
+                        />
+                      </div>
+                      <div className="space-y-2">
+                        <Label htmlFor={`education-end-${idx}`}>End date</Label>
+                        <Input
+                          id={`education-end-${idx}`}
+                          type="date"
+                          value={ed.end}
+                          onChange={(e) => updateEducation(idx, "end", e.target.value)}
+                        />
+                      </div>
+                    </div>
+                    <div className="flex justify-end">
+                      <Button type="button" size="sm" variant="ghost" className="text-destructive" onClick={() => removeEducation(idx)}>
+                        <Trash2 className="w-4 h-4 mr-1.5" />
+                        Remove
+                      </Button>
+                    </div>
+                  </div>
+                ))}
+              </CardContent>
+            </Card>
           </div>
-          <div className="flex justify-end mt-3">
-            <Button onClick={changePassword} disabled={loading}>Change Password</Button>
+
+          <div className="space-y-6">
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <ShieldCheck className="w-4 h-4 text-primary" />
+                  Account Security
+                </CardTitle>
+                <CardDescription>Set a new password to keep your account secure.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <div className="space-y-2">
+                  <Label htmlFor="new-password">New password</Label>
+                  <Input
+                    id="new-password"
+                    type="password"
+                    placeholder="New password"
+                    value={newPassword}
+                    onChange={(e) => setNewPassword(e.target.value)}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="confirm-password">Confirm password</Label>
+                  <Input
+                    id="confirm-password"
+                    type="password"
+                    placeholder="Confirm password"
+                    value={confirmPassword}
+                    onChange={(e) => setConfirmPassword(e.target.value)}
+                  />
+                </div>
+                <Button onClick={changePassword} disabled={loading || uploadingResume} className="w-full">
+                  {(loading || uploadingResume) && <Loader2 className="w-4 h-4 mr-2 animate-spin" />}
+                  Change Password
+                </Button>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-lg">Profile Checklist</CardTitle>
+                <CardDescription>Quick view of profile completeness.</CardDescription>
+              </CardHeader>
+              <CardContent className="space-y-3 text-sm">
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Display name</span>
+                  <span className={displayName ? "text-foreground font-medium" : "text-muted-foreground"}>{displayName ? "Added" : "Missing"}</span>
+                </div>
+                <Separator />
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Resume</span>
+                  <span className={resumeUrl ? "text-foreground font-medium" : "text-muted-foreground"}>{resumeUrl ? "Uploaded" : "Missing"}</span>
+                </div>
+                <Separator />
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Experience entries</span>
+                  <span className="text-foreground font-medium">{experience.length}</span>
+                </div>
+                <Separator />
+                <div className="flex items-center justify-between">
+                  <span className="text-muted-foreground">Education entries</span>
+                  <span className="text-foreground font-medium">{education.length}</span>
+                </div>
+              </CardContent>
+            </Card>
           </div>
         </div>
       </div>
