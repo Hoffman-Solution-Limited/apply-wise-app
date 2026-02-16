@@ -1,73 +1,116 @@
-# Welcome to your Lovable project
+# ApplyAtlas
 
-## Project info
+ApplyAtlas is a job application tracker built with React + Supabase.
 
-**URL**: https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID
+It helps you track every role from first application to outcome, while keeping the exact documents used for each submission.
 
-## How can I edit this code?
+## Features
 
-There are several ways of editing your application.
+- Auth with email/password and OAuth providers (Google, LinkedIn, OIDC support in config).
+- Dashboard with table + kanban views.
+- Job actions are limited to:
+  - `Edit`
+  - `Submit application`
+  - `Delete`
+- Submission flow requires uploading the CV used, with optional cover letter upload.
+- Quick links on job cards/rows to open submitted documents (`View CV`, `View CL`).
+- Profile page supports resume upload and profile details.
 
-**Use Lovable**
+## Tech Stack
 
-Simply visit the [Lovable Project](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and start prompting.
+- React 18 + TypeScript
+- Vite
+- Tailwind CSS + shadcn/ui
+- React Query
+- Supabase (Auth, Postgres, Storage)
 
-Changes made via Lovable will be committed automatically to this repo.
+## Requirements
 
-**Use your preferred IDE**
+- Node.js 18+
+- npm
+- Supabase project (hosted or local)
 
-If you want to work locally using your own IDE, you can clone this repo and push changes. Pushed changes will also be reflected in Lovable.
+## Install and Run
 
-The only requirement is having Node.js & npm installed - [install with nvm](https://github.com/nvm-sh/nvm#installing-and-updating)
-
-Follow these steps:
-
-```sh
-# Step 1: Clone the repository using the project's Git URL.
-git clone <YOUR_GIT_URL>
-
-# Step 2: Navigate to the project directory.
-cd <YOUR_PROJECT_NAME>
-
-# Step 3: Install the necessary dependencies.
-npm i
-
-# Step 4: Start the development server with auto-reloading and an instant preview.
+```bash
+npm install
 npm run dev
 ```
 
-**Edit a file directly in GitHub**
+Build:
 
-- Navigate to the desired file(s).
-- Click the "Edit" button (pencil icon) at the top right of the file view.
-- Make your changes and commit the changes.
+```bash
+npm run build
+```
 
-**Use GitHub Codespaces**
+## Environment Variables
 
-- Navigate to the main page of your repository.
-- Click on the "Code" button (green button) near the top right.
-- Select the "Codespaces" tab.
-- Click on "New codespace" to launch a new Codespace environment.
-- Edit files directly within the Codespace and commit and push your changes once you're done.
+Create/update `.env`:
 
-## What technologies are used for this project?
+```env
+VITE_SUPABASE_URL="https://<your-project-ref>.supabase.co"
+VITE_SUPABASE_PUBLISHABLE_KEY="<your-anon-key>"
+VITE_SUPABASE_PROJECT_ID="<your-project-ref>"
+VITE_SUPABASE_RESUMES_BUCKET="resumes"
+```
 
-This project is built with:
+`VITE_SUPABASE_RESUMES_BUCKET` defaults to `resumes` if omitted.
 
-- Vite
-- TypeScript
-- React
-- shadcn-ui
-- Tailwind CSS
+## Supabase Migrations
 
-## How can I deploy this project?
+This repo includes migrations for:
 
-Simply open [Lovable](https://lovable.dev/projects/REPLACE_WITH_PROJECT_ID) and click on Share -> Publish.
+- core schema (`profiles`, `jobs`)
+- profile fields (`resume_url`, `experience`, `education`)
+- storage bucket/policies for resumes
+- submitted document columns on `jobs`:
+  - `submitted_cv_url`
+  - `submitted_cover_letter_url`
 
-## Can I connect a custom domain to my Lovable project?
+### Hosted Supabase
 
-Yes, you can!
+1. Login CLI:
 
-To connect a domain, navigate to Project > Settings > Domains and click Connect Domain.
+```bash
+npx supabase login
+```
 
-Read more here: [Setting up a custom domain](https://docs.lovable.dev/features/custom-domain#custom-domain)
+2. Link project:
+
+```bash
+npx supabase link --project-ref jktkavcipauyzvukqwbf
+```
+
+3. Push migrations:
+
+```bash
+npx supabase db push --include-all
+```
+
+### Local Supabase
+
+```bash
+npx supabase start
+npx supabase db reset
+```
+
+Then point `.env` to local Supabase values from:
+
+```bash
+npx supabase status
+```
+
+## Upload Troubleshooting
+
+If you see `Upload failed: bucket not found`, the storage bucket migration has not been applied.
+
+Apply migrations (hosted or local) so the `resumes` bucket and policies are created.
+
+## Scripts
+
+- `npm run dev` - start dev server
+- `npm run build` - production build
+- `npm run preview` - preview build
+- `npm run lint` - lint
+- `npm run test` - run tests
+- `npm run test:watch` - watch tests
