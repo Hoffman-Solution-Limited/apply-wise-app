@@ -10,8 +10,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from "@/components/ui/dialog";
+import { BrandLogo } from "@/components/BrandLogo";
 import { useToast } from "@/hooks/use-toast";
-import { Briefcase, Mail, Lock, User, Loader2, Globe } from "lucide-react";
+import { Mail, Lock, User, Loader2, Globe } from "lucide-react";
 import { useNavigate, Link } from "react-router-dom";
 
 const AuthPage = () => {
@@ -133,11 +134,8 @@ const AuthPage = () => {
   return (
     <div className="min-h-screen flex items-center justify-center bg-background px-4">
       <div className="w-full max-w-md animate-fade-in">
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-primary/10 mb-4">
-            <Briefcase className="w-7 h-7 text-primary" />
-          </div>
-          <h1 className="text-2xl font-bold tracking-tight">JobTracker</h1>
+        <div className="text-center mb-8 space-y-3">
+          <BrandLogo size="lg" showTagline className="justify-center" />
           <p className="text-muted-foreground mt-1 text-sm">
             {isLogin ? "Welcome back" : "Create your account"}
           </p>
