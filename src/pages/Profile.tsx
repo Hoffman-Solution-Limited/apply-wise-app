@@ -66,7 +66,11 @@ const Profile = () => {
   const [resumeFileName, setResumeFileName] = useState("");
   const [loading, setLoading] = useState(false);
   const [uploadingResume, setUploadingResume] = useState(false);
+<<<<<<< HEAD
   const [importingLinkedIn, setImportingLinkedIn] = useState(false);
+=======
+  const [parsingCv, setParsingCv] = useState(false);
+>>>>>>> a9bb489251dde0556e68cedc14167727c7fa5238
   const [experience, setExperience] = useState<ExperienceItem[]>([]);
   const [education, setEducation] = useState<EducationItem[]>([]);
   const resumeInputRef = useRef<HTMLInputElement>(null);
@@ -123,8 +127,8 @@ const Profile = () => {
         if (error && (error as any).code !== 'PGRST116') {
           throw error;
         }
-        const profile = data as
-          | {
+        const profile = data as unknown as
+          {
               display_name?: string | null;
               resume_url?: string | null;
               experience?: ExperienceItem[] | null;
@@ -307,6 +311,55 @@ const Profile = () => {
     window.history.replaceState({}, "", nextUrl);
   }, [applyLinkedInPrefill, readLinkedInPrefill, session, toast, user]);
 
+  const extractTextFromFile = async (file: File): Promise<string> => {
+    // For PDF files, read as text (basic extraction)
+    const text = await file.text();
+    // If it looks like binary/PDF, extract printable strings
+    if (text.includes('%PDF')) {
+      // Extract readable text segments from PDF binary
+      const readable = text.replace(/[^\x20-\x7E\n\r\t]/g, ' ')
+        .replace(/\s{3,}/g, ' ')
+        .trim();
+      return readable.slice(0, 15000); // limit context size
+    }
+    return text.slice(0, 15000);
+  };
+
+  const parseCvWithAI = async (file: File) => {
+    setParsingCv(true);
+    try {
+      const resumeText = await extractTextFromFile(file);
+      if (resumeText.trim().length < 50) {
+        toast({ title: 'Could not extract text', description: 'The CV text could not be read. Please fill in the fields manually.', variant: 'destructive' });
+        return;
+      }
+
+      const { data, error } = await supabase.functions.invoke('parse-cv', {
+        body: { resumeText },
+      });
+
+      if (error) throw error;
+
+      if (data?.experience?.length) {
+        setExperience(data.experience);
+      }
+      if (data?.education?.length) {
+        setEducation(data.education);
+      }
+
+      if (data?.experience?.length || data?.education?.length) {
+        toast({ title: 'CV parsed!', description: 'Education and experience have been autofilled. Review and save your profile.' });
+      } else {
+        toast({ title: 'No data extracted', description: 'Could not extract education or experience. You can fill them in manually.' });
+      }
+    } catch (err: any) {
+      console.error('CV parse error:', err);
+      toast({ title: 'CV parsing failed', description: err.message || 'Could not parse CV. Fill in fields manually.', variant: 'destructive' });
+    } finally {
+      setParsingCv(false);
+    }
+  };
+
   const uploadResume = async (file: File) => {
     if (!user) return;
     const lowerName = file.name.toLowerCase();
@@ -350,7 +403,6 @@ const Profile = () => {
       if (uploadError) throw uploadError;
       const url = resolveResumeUrl(path);
 
-      // Save profile metadata (use user_id field)
       const { error: upsertError } = await supabase
         .from('profiles')
         .upsert(
@@ -359,8 +411,16 @@ const Profile = () => {
         );
       if (upsertError) throw upsertError;
       setResumeUrl(url);
+<<<<<<< HEAD
       setResumeFileName(file.name);
       toast({ title: 'Resume uploaded', description: 'Your resume has been uploaded.' });
+=======
+      setResumeFileName(safeName);
+      toast({ title: 'Resume uploaded', description: 'Parsing your CV to autofill profile...' });
+
+      // Trigger AI parsing
+      void parseCvWithAI(file);
+>>>>>>> a9bb489251dde0556e68cedc14167727c7fa5238
     } catch (err: any) {
       const description = isBucketNotFoundError(err) ? getBucketNotFoundMessage(RESUMES_BUCKET) : err.message;
       toast({ title: 'Upload error', description, variant: 'destructive' });
@@ -554,6 +614,12 @@ const Profile = () => {
                     </div>
                   </div>
                 </div>
+                {parsingCv && (
+                  <div className="flex items-center gap-2 mt-3 p-3 rounded-lg bg-primary/5 border border-primary/20">
+                    <Loader2 className="w-4 h-4 animate-spin text-primary" />
+                    <span className="text-sm text-primary">Parsing your CV with AI to autofill education & experience...</span>
+                  </div>
+                )}
               </CardContent>
             </Card>
 

@@ -26,8 +26,6 @@ export type Database = {
           notes: string | null
           platform: Database["public"]["Enums"]["job_platform"] | null
           status: Database["public"]["Enums"]["job_status"]
-          submitted_cover_letter_url: string | null
-          submitted_cv_url: string | null
           tags: string[] | null
           title: string
           updated_at: string
@@ -44,8 +42,6 @@ export type Database = {
           notes?: string | null
           platform?: Database["public"]["Enums"]["job_platform"] | null
           status?: Database["public"]["Enums"]["job_status"]
-          submitted_cover_letter_url?: string | null
-          submitted_cv_url?: string | null
           tags?: string[] | null
           title: string
           updated_at?: string
@@ -62,8 +58,6 @@ export type Database = {
           notes?: string | null
           platform?: Database["public"]["Enums"]["job_platform"] | null
           status?: Database["public"]["Enums"]["job_status"]
-          submitted_cover_letter_url?: string | null
-          submitted_cv_url?: string | null
           tags?: string[] | null
           title?: string
           updated_at?: string
@@ -75,24 +69,33 @@ export type Database = {
         Row: {
           created_at: string
           display_name: string | null
+          education: Json | null
           email: string | null
+          experience: Json | null
           id: string
+          resume_url: string | null
           updated_at: string
           user_id: string
         }
         Insert: {
           created_at?: string
           display_name?: string | null
+          education?: Json | null
           email?: string | null
+          experience?: Json | null
           id?: string
+          resume_url?: string | null
           updated_at?: string
           user_id: string
         }
         Update: {
           created_at?: string
           display_name?: string | null
+          education?: Json | null
           email?: string | null
+          experience?: Json | null
           id?: string
+          resume_url?: string | null
           updated_at?: string
           user_id?: string
         }

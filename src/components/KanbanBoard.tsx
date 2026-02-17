@@ -65,30 +65,6 @@ export const KanbanBoard = ({ jobs, onEdit, onSubmitApplication, onDelete }: Pro
                     Delete
                   </Button>
                 </div>
-                <div className="flex items-center gap-2 text-xs mt-2">
-                  {job.submitted_cv_url ? (
-                    <a
-                      href={job.submitted_cv_url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-primary hover:underline"
-                    >
-                      View CV
-                    </a>
-                  ) : (
-                    <span className="text-muted-foreground">No CV</span>
-                  )}
-                  {job.submitted_cover_letter_url && (
-                    <a
-                      href={job.submitted_cover_letter_url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-primary hover:underline"
-                    >
-                      View CL
-                    </a>
-                  )}
-                </div>
               </div>
             ))}
             {grouped[status].length === 0 && (
