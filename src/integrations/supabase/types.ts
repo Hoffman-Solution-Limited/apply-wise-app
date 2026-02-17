@@ -69,24 +69,33 @@ export type Database = {
         Row: {
           created_at: string
           display_name: string | null
+          education: Json | null
           email: string | null
+          experience: Json | null
           id: string
+          resume_url: string | null
           updated_at: string
           user_id: string
         }
         Insert: {
           created_at?: string
           display_name?: string | null
+          education?: Json | null
           email?: string | null
+          experience?: Json | null
           id?: string
+          resume_url?: string | null
           updated_at?: string
           user_id: string
         }
         Update: {
           created_at?: string
           display_name?: string | null
+          education?: Json | null
           email?: string | null
+          experience?: Json | null
           id?: string
+          resume_url?: string | null
           updated_at?: string
           user_id?: string
         }
