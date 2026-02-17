@@ -138,33 +138,6 @@ export const JobFormDialog = ({ open, onOpenChange, job, onSave, saving }: Props
             </div>
           </div>
 
-          {(job?.submitted_cv_url || job?.submitted_cover_letter_url) && (
-            <div className="space-y-2">
-              <Label>Submitted Documents</Label>
-              <div className="flex flex-wrap gap-2 text-sm">
-                {job.submitted_cv_url && (
-                  <a
-                    href={job.submitted_cv_url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center rounded-md border px-2.5 py-1 hover:bg-accent"
-                  >
-                    View CV used
-                  </a>
-                )}
-                {job.submitted_cover_letter_url && (
-                  <a
-                    href={job.submitted_cover_letter_url}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="inline-flex items-center rounded-md border px-2.5 py-1 hover:bg-accent"
-                  >
-                    View cover letter used
-                  </a>
-                )}
-              </div>
-            </div>
-          )}
 
           <div className="space-y-2">
             <Label>Description</Label>

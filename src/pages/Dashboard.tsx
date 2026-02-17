@@ -212,8 +212,6 @@ const Dashboard = () => {
         title: submitTargetJob.title,
         status: "submitted",
         date_submitted: submittedDate,
-        submitted_cv_url: cvUrl,
-        submitted_cover_letter_url: coverLetterUrl,
       });
       setSubmitDialogOpen(false);
       setSubmitTargetJob(null);

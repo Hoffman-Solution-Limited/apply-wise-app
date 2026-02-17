@@ -57,30 +57,7 @@ export const JobTable = ({ jobs, onEdit, onSubmitApplication, onDelete }: Props)
                 </div>
               </TableCell>
               <TableCell>
-                <div className="flex items-center gap-2 text-xs">
-                  {job.submitted_cv_url ? (
-                    <a
-                      href={job.submitted_cv_url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-primary hover:underline"
-                    >
-                      View CV
-                    </a>
-                  ) : (
-                    <span className="text-muted-foreground">No CV</span>
-                  )}
-                  {job.submitted_cover_letter_url && (
-                    <a
-                      href={job.submitted_cover_letter_url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-primary hover:underline"
-                    >
-                      View CL
-                    </a>
-                  )}
-                </div>
+                <span className="text-xs text-muted-foreground">—</span>
               </TableCell>
               <TableCell>
                 <div className="flex items-center gap-1.5">
