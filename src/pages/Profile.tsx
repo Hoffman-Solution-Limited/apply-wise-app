@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 import { Input } from "@/components/ui/input";
@@ -8,7 +8,7 @@ import { useToast } from "@/hooks/use-toast";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Avatar, AvatarFallback } from "@/components/ui/avatar";
 import { Separator } from "@/components/ui/separator";
-import { Loader2, Upload, FileText, Plus, Trash2, ShieldCheck, ArrowLeft } from "lucide-react";
+import { Loader2, Upload, FileText, Plus, Trash2, ShieldCheck, ArrowLeft, Linkedin } from "lucide-react";
 import { Link } from "react-router-dom";
 import { RESUMES_BUCKET, getBucketNotFoundMessage, isBucketNotFoundError } from "@/lib/storage";
 
@@ -26,8 +26,15 @@ type EducationItem = {
   end: string;
 };
 
+type LinkedInPrefill = {
+  displayName?: string;
+  email?: string;
+  headline?: string;
+};
+
 const EMPTY_EXPERIENCE: ExperienceItem = { company: "", role: "", start: "", end: "" };
 const EMPTY_EDUCATION: EducationItem = { school: "", degree: "", start: "", end: "" };
+const LINKEDIN_PROVIDERS = new Set(["linkedin", "linkedin_oidc"]);
 
 const getInitials = (value: string) => {
   const parts = value.split(/\s+|@|\./).filter(Boolean);
@@ -35,6 +42,8 @@ const getInitials = (value: string) => {
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
   return `${parts[0][0]}${parts[parts.length - 1][0]}`.toUpperCase();
 };
+
+const toTrimmedString = (value: unknown) => (typeof value === "string" ? value.trim() : "");
 
 const getFileNameFromPathOrUrl = (value: string) => {
   if (!value) return "";
@@ -57,9 +66,11 @@ const Profile = () => {
   const [resumeFileName, setResumeFileName] = useState("");
   const [loading, setLoading] = useState(false);
   const [uploadingResume, setUploadingResume] = useState(false);
+  const [importingLinkedIn, setImportingLinkedIn] = useState(false);
   const [experience, setExperience] = useState<ExperienceItem[]>([]);
   const [education, setEducation] = useState<EducationItem[]>([]);
   const resumeInputRef = useRef<HTMLInputElement>(null);
+  const linkedInProvider = ((import.meta.env.VITE_LINKEDIN_PROVIDER as string) || "linkedin_oidc").trim();
 
   const initials = useMemo(() => {
     const source = displayName.trim() || user?.email || "User";
@@ -143,7 +154,7 @@ const Profile = () => {
             setResumeFileName(getFileNameFromPathOrUrl(latestResumePath));
             await supabase
               .from("profiles")
-              .upsert({ user_id: user.id, resume_url: autoResumeUrl } as any);
+              .upsert({ user_id: user.id, resume_url: autoResumeUrl } as any, { onConflict: "user_id" });
           }
         }
       } catch (err: any) {
@@ -155,57 +166,146 @@ const Profile = () => {
     loadProfile();
   }, [user]);
 
-  // If user just signed in via LinkedIn, try to fetch profile details
-  const [linkedInImported, setLinkedInImported] = useState(false);
-  useEffect(() => {
-    if (!session || !user || linkedInImported) return;
-    // Supabase may expose provider access token on session.provider_token
-    const providerToken = (session as any)?.provider_token;
-    // Also ensure the identity provider is LinkedIn if available
-    const isLinkedIn = (session as any)?.user?.identities?.some(
-      (id: any) => id.provider === 'linkedin' || id.provider === 'linkedin_oidc'
+  const readLinkedInPrefill = useCallback((): LinkedInPrefill | null => {
+    if (!session) return null;
+    const identities = (session as any)?.user?.identities;
+    if (!Array.isArray(identities)) return null;
+
+    const linkedInIdentity = identities.find((identity: any) =>
+      LINKEDIN_PROVIDERS.has(String(identity?.provider ?? "").toLowerCase())
     );
-    if (!providerToken || !isLinkedIn) return;
+    if (!linkedInIdentity) return null;
 
-    const fetchLinkedIn = async () => {
-      try {
-        // Basic profile
-        const meRes = await fetch('https://api.linkedin.com/v2/me', {
-          headers: { Authorization: `Bearer ${providerToken}` },
-        });
-        if (!meRes.ok) throw new Error('Failed to fetch LinkedIn profile');
-        const me = await meRes.json();
+    const userMetadata = ((session as any)?.user?.user_metadata ?? {}) as Record<string, unknown>;
+    const identityData = (linkedInIdentity?.identity_data ?? {}) as Record<string, unknown>;
 
-        // Email
-        const emailRes = await fetch('https://api.linkedin.com/v2/emailAddress?q=members&projection=(elements*(handle~))', {
-          headers: { Authorization: `Bearer ${providerToken}` },
-        });
-        let email = '';
-        if (emailRes.ok) {
-          const emailJson = await emailRes.json();
-          email = emailJson?.elements?.[0]?.['handle~']?.emailAddress ?? '';
-        }
+    const firstName = toTrimmedString(userMetadata.given_name || identityData.given_name);
+    const lastName = toTrimmedString(userMetadata.family_name || identityData.family_name);
+    const fallbackFullName = `${firstName} ${lastName}`.trim();
 
-        // Map fields
-        const firstName = me.localizedFirstName || me.firstName?.localized?.['en_US'] || '';
-        const lastName = me.localizedLastName || me.lastName?.localized?.['en_US'] || '';
-        const fullName = `${firstName} ${lastName}`.trim();
+    const displayName =
+      toTrimmedString(userMetadata.full_name) ||
+      toTrimmedString(userMetadata.name) ||
+      toTrimmedString(identityData.full_name) ||
+      toTrimmedString(identityData.name) ||
+      fallbackFullName;
 
-        if (fullName) setDisplayName(fullName);
+    const importedEmail =
+      toTrimmedString((session as any)?.user?.email) ||
+      toTrimmedString(userMetadata.email) ||
+      toTrimmedString(identityData.email);
 
-        // Add a lightweight experience entry if available (headline)
-        const headline = (me.headline && (me.headline.localized?.['en_US'] || me.headline)) ?? '';
-        if (headline) setExperience((prev) => [{ company: '', role: headline, start: '', end: '' }, ...prev]);
+    const headline =
+      toTrimmedString(userMetadata.headline) ||
+      toTrimmedString(identityData.headline);
 
-        setLinkedInImported(true);
-        toast({ title: 'Imported from LinkedIn', description: 'We pre-filled some profile fields. Please review and save.' });
-      } catch (err: any) {
-        console.warn('LinkedIn import failed', err);
-      }
+    if (!displayName && !importedEmail && !headline) return null;
+
+    return {
+      displayName: displayName || undefined,
+      email: importedEmail || undefined,
+      headline: headline || undefined,
     };
+  }, [session]);
 
-    fetchLinkedIn();
-  }, [session, user, linkedInImported, toast]);
+  const applyLinkedInPrefill = useCallback(
+    (prefill: LinkedInPrefill, source: "button" | "redirect"): boolean => {
+      let changed = false;
+
+      if (prefill.displayName && !displayName.trim()) {
+        setDisplayName(prefill.displayName);
+        changed = true;
+      }
+
+      if (prefill.email && !email.trim()) {
+        setEmail(prefill.email);
+        changed = true;
+      }
+
+      if (prefill.headline) {
+        const headlineNormalized = prefill.headline.trim().toLowerCase();
+        const exists = experience.some((item) => item.role.trim().toLowerCase() === headlineNormalized);
+        if (!exists) {
+          setExperience((prev) => [{ company: "", role: prefill.headline!, start: "", end: "" }, ...prev]);
+          changed = true;
+        }
+      }
+
+      if (changed) {
+        toast({
+          title: "Imported from LinkedIn",
+          description: "We pre-filled missing fields. Review and save your profile.",
+        });
+      } else if (source === "button") {
+        toast({
+          title: "No new LinkedIn details",
+          description: "Your current fields already contain imported data.",
+        });
+      }
+
+      return changed;
+    },
+    [displayName, email, experience, toast]
+  );
+
+  const importFromLinkedIn = useCallback(async () => {
+    if (!session || !user) return;
+
+    setImportingLinkedIn(true);
+    try {
+      const prefill = readLinkedInPrefill();
+      if (prefill) {
+        applyLinkedInPrefill(prefill, "button");
+        return;
+      }
+
+      const redirectTo = `${window.location.origin}/profile?linkedin_import=1`;
+      const tryProvider = async (provider: string) =>
+        supabase.auth.signInWithOAuth({
+          provider: provider as any,
+          options: { redirectTo },
+        });
+
+      const { error } = await tryProvider(linkedInProvider);
+      if (error) {
+        const fallbackProvider = linkedInProvider === "linkedin_oidc" ? "linkedin" : "linkedin_oidc";
+        const shouldTryFallback = /provider|oauth|enabled|unsupported|unknown/i.test(error.message);
+        if (shouldTryFallback) {
+          const { error: fallbackError } = await tryProvider(fallbackProvider);
+          if (fallbackError) throw fallbackError;
+          return;
+        }
+        throw error;
+      }
+    } catch (err: any) {
+      toast({ title: "LinkedIn import failed", description: err.message, variant: "destructive" });
+    } finally {
+      setImportingLinkedIn(false);
+    }
+  }, [applyLinkedInPrefill, linkedInProvider, readLinkedInPrefill, session, toast, user]);
+
+  useEffect(() => {
+    if (!session || !user) return;
+
+    const params = new URLSearchParams(window.location.search);
+    if (params.get("linkedin_import") !== "1") return;
+
+    const prefill = readLinkedInPrefill();
+    if (prefill) {
+      applyLinkedInPrefill(prefill, "redirect");
+    } else {
+      toast({
+        title: "LinkedIn details unavailable",
+        description: "We could not read LinkedIn profile details from this session.",
+        variant: "destructive",
+      });
+    }
+
+    params.delete("linkedin_import");
+    const query = params.toString();
+    const nextUrl = `${window.location.pathname}${query ? `?${query}` : ""}${window.location.hash}`;
+    window.history.replaceState({}, "", nextUrl);
+  }, [applyLinkedInPrefill, readLinkedInPrefill, session, toast, user]);
 
   const uploadResume = async (file: File) => {
     if (!user) return;
@@ -253,10 +353,13 @@ const Profile = () => {
       // Save profile metadata (use user_id field)
       const { error: upsertError } = await supabase
         .from('profiles')
-        .upsert({ user_id: user.id, display_name: displayName, resume_url: url, experience, education } as any);
+        .upsert(
+          { user_id: user.id, display_name: displayName, email, resume_url: url, experience, education } as any,
+          { onConflict: "user_id" }
+        );
       if (upsertError) throw upsertError;
       setResumeUrl(url);
-      setResumeFileName(safeName);
+      setResumeFileName(file.name);
       toast({ title: 'Resume uploaded', description: 'Your resume has been uploaded.' });
     } catch (err: any) {
       const description = isBucketNotFoundError(err) ? getBucketNotFoundMessage(RESUMES_BUCKET) : err.message;
@@ -299,7 +402,12 @@ const Profile = () => {
         if (updateEmailError) throw updateEmailError;
         toast({ title: 'Email updated', description: 'We updated your authentication email. Please confirm if required.' });
       }
-      const { error } = await supabase.from('profiles').upsert({ user_id: user.id, display_name: displayName, resume_url: resumeUrl, experience, education } as any);
+      const { error } = await supabase
+        .from('profiles')
+        .upsert(
+          { user_id: user.id, display_name: displayName, email, resume_url: resumeUrl, experience, education } as any,
+          { onConflict: "user_id" }
+        );
       if (error) throw error;
       toast({ title: 'Saved', description: 'Your profile has been updated.' });
     } catch (err: any) {
@@ -364,9 +472,21 @@ const Profile = () => {
         <div className="grid gap-6 lg:grid-cols-[2fr_1fr]">
           <div className="space-y-6">
             <Card>
-              <CardHeader>
-                <CardTitle className="text-lg">Basic Information</CardTitle>
-                <CardDescription>Keep your public profile and sign-in email up to date.</CardDescription>
+              <CardHeader className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <div>
+                  <CardTitle className="text-lg">Basic Information</CardTitle>
+                  <CardDescription>Keep your public profile and sign-in email up to date.</CardDescription>
+                </div>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={importFromLinkedIn}
+                  disabled={importingLinkedIn || loading || uploadingResume}
+                >
+                  {importingLinkedIn ? <Loader2 className="w-4 h-4 mr-2 animate-spin" /> : <Linkedin className="w-4 h-4 mr-2" />}
+                  Fill from LinkedIn
+                </Button>
               </CardHeader>
               <CardContent className="grid grid-cols-1 gap-4 md:grid-cols-2">
                 <div className="space-y-2">
