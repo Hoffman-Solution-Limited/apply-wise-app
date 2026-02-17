@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { supabase } from "@/integrations/supabase/client";
+import { lovable } from "@/integrations/lovable/index";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -12,8 +13,8 @@ import {
 } from "@/components/ui/dialog";
 import { BrandLogo } from "@/components/BrandLogo";
 import { useToast } from "@/hooks/use-toast";
-import { Mail, Lock, User, Loader2, Globe } from "lucide-react";
-import { useNavigate, Link } from "react-router-dom";
+import { Mail, Lock, User, Loader2 } from "lucide-react";
+import { useNavigate } from "react-router-dom";
 
 const AuthPage = () => {
   const [isLogin, setIsLogin] = useState(true);
@@ -25,7 +26,7 @@ const AuthPage = () => {
   const [forgotEmail, setForgotEmail] = useState("");
   const [forgotLoading, setForgotLoading] = useState(false);
   const { toast } = useToast();
-  const [user, setUser] = useState<any>(null);
+  
   const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -63,33 +64,13 @@ const AuthPage = () => {
     }
   };
 
-  // resume upload is handled on Profile page after sign in
-
-  const oidcProvider = (import.meta.env.VITE_OIDC_PROVIDER as string) ?? '';
-  const linkedInProvider = (import.meta.env.VITE_LINKEDIN_PROVIDER as string) || "linkedin_oidc";
-
-  const signInWithProvider = async (provider: string, fallbackProvider?: string) => {
+  const signInWithGoogle = async () => {
     setLoading(true);
     try {
-      const { error } = await supabase.auth.signInWithOAuth({
-        provider: provider as any,
-        options: { redirectTo: window.location.origin },
+      const { error } = await lovable.auth.signInWithOAuth("google", {
+        redirect_uri: window.location.origin,
       });
-
-      if (error && fallbackProvider) {
-        const shouldTryFallback = /provider|oauth|enabled|unsupported|unknown/i.test(error.message);
-        if (shouldTryFallback) {
-          const { error: fallbackError } = await supabase.auth.signInWithOAuth({
-            provider: fallbackProvider as any,
-            options: { redirectTo: window.location.origin },
-          });
-          if (fallbackError) throw fallbackError;
-          return;
-        }
-      }
-
       if (error) throw error;
-      // Supabase will redirect for OAuth flows
     } catch (err: any) {
       toast({ title: 'OAuth Error', description: err.message, variant: 'destructive' });
     } finally {
@@ -222,49 +203,19 @@ const AuthPage = () => {
           </div>
 
           <div className="mt-6">
-            <h2 className="text-lg font-medium">Continue with</h2>
-            <div className="flex gap-3 flex-col mt-3">
-              <Button type="button" onClick={() => signInWithProvider('google')} disabled={loading} className="flex items-center justify-center gap-2 border">
-                <svg width="18" height="18" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
-                  <path d="M44.5 20H24v8.5h11.9C34.3 33.7 29.6 37 24 37c-7.2 0-13-5.8-13-13s5.8-13 13-13c3.4 0 6.4 1.3 8.7 3.4l6.1-6.1C34.6 6.7 29.6 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20c11 0 20-8.9 20-20 0-1.3-.1-2.6-.5-3.8z" fill="#FFC107"/>
-                  <path d="M6.3 14.7l7 5.1C15.9 16 19.7 13 24 13c3.4 0 6.4 1.3 8.7 3.4l6.1-6.1C34.6 6.7 29.6 4 24 4 16.6 4 10 8.9 6.3 14.7z" fill="#FF3D00"/>
-                  <path d="M24 44c5.6 0 10.6-1.9 14.4-5.1l-6.9-5.6C29.9 33.6 27.1 34.5 24 34.5c-5.6 0-10.3-3.3-12-8.1l-7 5.1C6 37.6 14 44 24 44z" fill="#4CAF50"/>
-                  <path d="M44.5 20H24v8.5h11.9C35 31 30.5 34.5 24 34.5v9.5C34 44 44.5 35.6 44.5 20z" fill="#1976D2"/>
-                </svg>
-                Sign in with Google
-              </Button>
-
-              <Button
-                type="button"
-                onClick={() =>
-                  signInWithProvider(
-                    linkedInProvider,
-                    linkedInProvider === "linkedin_oidc" ? "linkedin" : "linkedin_oidc"
-                  )
-                }
-                disabled={loading}
-                className="flex items-center justify-center gap-2 border"
-              >
-                <svg width="18" height="18" viewBox="0 0 34 34" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
-                  <rect width="34" height="34" rx="4" fill="#0A66C2"/>
-                  <path d="M8.7 12.2h3.4V26h-3.4v-13.8zM10.4 9.8c1.1 0 1.8.7 1.8 1.6 0 .9-.7 1.6-1.8 1.6s-1.8-.7-1.8-1.6c0-.9.7-1.6 1.8-1.6zM13.8 12.2H17v1.9h.1c.4-.8 1.5-1.6 3.2-1.6 3.4 0 4 2.2 4 5V26h-3.4v-6.3c0-1.5 0-3.5-2.1-3.5-2.1 0-2.4 1.6-2.4 3.4V26H13.8v-13.8z" fill="#fff"/>
-                </svg>
-                Sign in with LinkedIn
-              </Button>
-
-              <div className="text-center text-sm text-muted-foreground">
-                <p>Or sign up with email to create an account. You can upload your resume from your profile after signing in.</p>
-                <p className="mt-2"><Link to="/profile" className="text-primary hover:underline">Go to Profile</Link></p>
-              </div>
-              {oidcProvider && (
-                <div className="mt-2">
-                  <Button type="button" onClick={() => signInWithProvider(oidcProvider)} disabled={loading} className="flex items-center justify-center gap-2 border">
-                    <Globe className="w-4 h-4" />
-                    Sign in with OpenID Connect
-                  </Button>
-                </div>
-              )}
+            <div className="relative mb-4">
+              <div className="absolute inset-0 flex items-center"><span className="w-full border-t" /></div>
+              <div className="relative flex justify-center text-xs uppercase"><span className="bg-card px-2 text-muted-foreground">Or continue with</span></div>
             </div>
+            <Button type="button" variant="outline" onClick={signInWithGoogle} disabled={loading} className="w-full flex items-center justify-center gap-2">
+              <svg width="18" height="18" viewBox="0 0 48 48" fill="none" xmlns="http://www.w3.org/2000/svg" aria-hidden>
+                <path d="M44.5 20H24v8.5h11.9C34.3 33.7 29.6 37 24 37c-7.2 0-13-5.8-13-13s5.8-13 13-13c3.4 0 6.4 1.3 8.7 3.4l6.1-6.1C34.6 6.7 29.6 4 24 4 12.9 4 4 12.9 4 24s8.9 20 20 20c11 0 20-8.9 20-20 0-1.3-.1-2.6-.5-3.8z" fill="#FFC107"/>
+                <path d="M6.3 14.7l7 5.1C15.9 16 19.7 13 24 13c3.4 0 6.4 1.3 8.7 3.4l6.1-6.1C34.6 6.7 29.6 4 24 4 16.6 4 10 8.9 6.3 14.7z" fill="#FF3D00"/>
+                <path d="M24 44c5.6 0 10.6-1.9 14.4-5.1l-6.9-5.6C29.9 33.6 27.1 34.5 24 34.5c-5.6 0-10.3-3.3-12-8.1l-7 5.1C6 37.6 14 44 24 44z" fill="#4CAF50"/>
+                <path d="M44.5 20H24v8.5h11.9C35 31 30.5 34.5 24 34.5v9.5C34 44 44.5 35.6 44.5 20z" fill="#1976D2"/>
+              </svg>
+              Sign in with Google
+            </Button>
           </div>
         </div>
       </div>
