@@ -26,8 +26,6 @@ export type Database = {
           notes: string | null
           platform: Database["public"]["Enums"]["job_platform"] | null
           status: Database["public"]["Enums"]["job_status"]
-          submitted_cover_letter_url: string | null
-          submitted_cv_url: string | null
           tags: string[] | null
           title: string
           updated_at: string
@@ -44,8 +42,6 @@ export type Database = {
           notes?: string | null
           platform?: Database["public"]["Enums"]["job_platform"] | null
           status?: Database["public"]["Enums"]["job_status"]
-          submitted_cover_letter_url?: string | null
-          submitted_cv_url?: string | null
           tags?: string[] | null
           title: string
           updated_at?: string
@@ -62,8 +58,6 @@ export type Database = {
           notes?: string | null
           platform?: Database["public"]["Enums"]["job_platform"] | null
           status?: Database["public"]["Enums"]["job_status"]
-          submitted_cover_letter_url?: string | null
-          submitted_cv_url?: string | null
           tags?: string[] | null
           title?: string
           updated_at?: string
